@@ -65,6 +65,27 @@ def bulk_volume_classification(buckets, window=50):
 
 
 @timeit
+def calculate_vpin_raw(df, ta, bucket_size_pct=0.01, vpin_window=50):
+  buckets, bucket_size = create_volume_buckets(df, bucket_size_pct)
+  buckets = bulk_volume_classification(buckets, window=vpin_window)
+
+  if len(buckets) <= 2:
+    raise ValueError("Too few buckets. Reduce bucket_size_pct.")
+  if vpin_window >= len(buckets):
+    vpin_window = max(2, int(0.2 * len(buckets)))
+
+  vpin_values = np.array(ta.vpin(buckets["buy_volume"].values, buckets["sell_volume"].values, vpin_window))
+
+  buckets["vpin"] = vpin_values
+
+  df["bucket_id"] = (df["volume"].cumsum() / bucket_size).astype(int)
+  vpin_map = dict(zip(buckets["bucket_id"], vpin_values, strict=True))
+  df["vpin"] = df["bucket_id"].map(vpin_map)
+
+  return df, buckets, vpin_values
+
+
+@timeit
 def calculate_vpin_cdf(vpin_values):
   out = np.full_like(vpin_values, np.nan, dtype=float)
   m = ~np.isnan(vpin_values)
@@ -121,41 +142,32 @@ class VpinForInfinityX6(NostalgiaForInfinityX6):
   @property
   def plot_config(self):
     existing_config = super().plot_config
-    existing_config["subplots"]["vpin_cdf"] = {"vpin_cdf": {"color": "blue"}}
-    existing_config["subplots"]["vpin_cdf_ssf"] = {"vpin_cdf_ssf": {"color": "cyan"}}
-    existing_config["subplots"]["vpin_cdf_check"] = {"vpin_cdf_check": {"color": "red"}}
-    existing_config["subplots"]["protections_long_global"] = {"protections_long_global": {"color": "yellow"}}
+    # existing_config["subplots"]["vpin_raw"] = {"vpin_raw": {"color": "blue"}}
+    existing_config["subplots"]["VPIN CDF"] = {"vpin_cdf_check": {"color": "red"}, "vpin_cdf_ssf": {"color": "cyan"}}
+    existing_config["subplots"]["Protections Superclass"] = {"protections_long_global": {"color": "yellow"}}
     existing_config["subplots"].pop("long_pump_protection", None)
     existing_config["subplots"].pop("long_dump_protection", None)
     return existing_config
-
-  @timeit
-  def calculate_vpin_raw(self, df, bucket_size_pct=0.01, vpin_window=50):
-    buckets, bucket_size = create_volume_buckets(df, bucket_size_pct)
-    buckets = bulk_volume_classification(buckets, window=vpin_window)
-
-    if len(buckets) <= 2:
-      raise ValueError("Too few buckets. Reduce bucket_size_pct.")
-    if vpin_window >= len(buckets):
-      vpin_window = max(2, int(0.2 * len(buckets)))
-
-    vpin_values = np.array(self.ta.vpin(buckets["buy_volume"].values, buckets["sell_volume"].values, vpin_window))
-
-    buckets["vpin"] = vpin_values
-
-    df["bucket_id"] = (df["volume"].cumsum() / bucket_size).astype(int)
-    vpin_map = dict(zip(buckets["bucket_id"], vpin_values, strict=True))
-    df["vpin"] = df["bucket_id"].map(vpin_map)
-
-    return df, buckets, vpin_values
 
   def populate_indicators(self, df: pd.DataFrame, metadata: dict) -> pd.DataFrame:
     df = super().populate_indicators(df, metadata)
 
     logger.debug("Calculating academic VPIN...")
 
+    if ("trading_mode" in self.config) and (self.config["trading_mode"] in ["futures", "margin"]):
+      btc_info_pair = f"BTC/{self.config['stake_currency']}:{self.config['stake_currency']}"
+    else:
+      btc_info_pair = f"BTC/{self.config['stake_currency']}"
+
+    btc_informative = self.btc_info_switcher(btc_info_pair, self.timeframe, metadata)
+    btc_informative["open"] = btc_informative["btc_open"]
+    btc_informative["high"] = btc_informative["btc_high"]
+    btc_informative["low"] = btc_informative["btc_low"]
+    btc_informative["close"] = btc_informative["btc_close"]
+    btc_informative["volume"] = btc_informative["btc_volume"]
+
     try:
-      df_temp, buckets, vpin_raw = calculate_vpin_raw(df.copy(), bucket_size_pct=0.01)
+      df_temp, buckets, vpin_raw = calculate_vpin_raw(btc_informative, self.ta, bucket_size_pct=0.01)
     except ValueError as e:
       logger.warning(f"VPIN calculation failed: {e}")
       return df
@@ -170,6 +182,7 @@ class VpinForInfinityX6(NostalgiaForInfinityX6):
     buckets["vpin_cdf_ssf"] = self.ta.supersmoother(buckets["vpin_cdf"].values, period=20)
     buckets["vpin_cdf_check"] = buckets["vpin_cdf_ssf"] <= self.vpin_treshold.value
 
+    # df["vpin_raw"] = interpolate_to_timeframe(vpin_raw, df).values
     df["vpin_cdf"] = interpolate_to_timeframe(buckets, df, "vpin_cdf").values
     df["vpin_cdf_ssf"] = interpolate_to_timeframe(buckets, df, "vpin_cdf_ssf").values
     df["vpin_cdf_check"] = interpolate_to_timeframe(buckets, df, "vpin_cdf_check").values
@@ -191,7 +204,7 @@ class VpinForInfinityX6(NostalgiaForInfinityX6):
     if getLevelName(logger.getEffectiveLevel()) == "DEBUG":
       alignment_check = pd.DataFrame(
         {
-          "datetime": df["datetime"].tail(20),
+          "datetime": df["date"].tail(20),
           "vpin_safe": df["vpin_cdf_check"].tail(20),
           "protection": df["protections_long_global"].tail(20),
         }
