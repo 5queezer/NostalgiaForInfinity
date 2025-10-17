@@ -1,0 +1,43 @@
+ARG sourceimage=freqtradeorg/freqtrade
+ARG sourcetag=stable
+
+# Stage 1: Build dependencies
+FROM ${sourceimage}:${sourcetag} AS builder
+
+ENV PYO3_BUILD_EXTENSION_MODULE=1
+
+USER root
+RUN pip install --upgrade pip maturin puccinialin
+
+COPY --chown=1000:1000 tests/requirements.txt /freqtrade/
+
+COPY --chown=1000:1000 lib/rust-indicators /freqtrade/rust-indicators
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential pkg-config ca-certificates curl \
+  && rm -rf /var/lib/apt/lists/*
+
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
+USER ftuser
+RUN --mount=type=cache,target=/home/ftuser/.cache/pip \
+    pip install --user --no-build-isolation --no-cache-dir -r /freqtrade/requirements.txt \
+    && pip install --user --no-build-isolation --no-cache-dir /freqtrade/rust-indicators
+
+USER root
+# Fix ownership of user install directory
+RUN chown -R 1000:1000 /home/ftuser/.local
+
+# Stage 2: Final image
+FROM ${sourceimage}:${sourcetag}
+
+USER root
+
+COPY --from=builder /home/ftuser/.local /home/ftuser/.local
+COPY --chown=1000:1000 tests/requirements.txt /freqtrade/
+
+COPY --chown=1000:1000 tests/NostalgiaForInfinityX* /freqtrade/
+
+USER ftuser
+
+ENV PATH=/home/ftuser/.local/bin:$PATH
