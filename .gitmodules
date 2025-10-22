@@ -1,0 +1,6 @@
+[submodule "cython-indicators"]
+	path = cython-indicators
+	url = git@github.com:5queezer/cython-indicators.git
+[submodule "lib/cython-indicators"]
+	path = lib/cython-indicators
+	url = git@github.com:5queezer/cython-indicators.git
