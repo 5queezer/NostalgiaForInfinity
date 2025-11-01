@@ -75,7 +75,7 @@ class VpinGuardX7(NostalgiaForInfinityX7):
   Probability of Informed Trading) with Cython acceleration.
   """
 
-  vpin_treshold = DecimalParameter(0.85, 0.99, decimals=3, default=0.95, space="sell")
+  vpin_treshold = DecimalParameter(0.85, 0.99, decimals=3, default=0.99, space="sell")
   vpin_ssf = IntParameter(2, 30, default=20, space="sell")
 
   bucket_size_pct = DecimalParameter(0.001, 0.3, decimals=3, default=0.01, space="sell")
