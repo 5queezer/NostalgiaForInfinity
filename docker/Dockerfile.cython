@@ -1,25 +1,36 @@
-ARG sourceimage=freqtradeorg/freqtrade
-ARG sourcetag=stable
+ARG sourceimage=5queezer/freqtrade
+ARG sourcetag=latest
 
 # Stage 1: Build dependencies
 FROM ${sourceimage}:${sourcetag} AS builder
 
 USER root
 
-RUN apt install build-essential -y
+RUN apt install build-essential unzip pkg-config \
+    libsecp256k1-dev \
+    libffi-dev \
+    python3-dev \
+    build-essential \
+    cmake \
+    -y
 
 RUN pip install --upgrade pip Cython
 
-COPY --chown=1000:1000 tests/requirements.txt /freqtrade/
+# COPY --chown=1000:1000 tests/requirements.txt /freqtrade/
 
 COPY --chown=1000:1000 lib/cython-indicators /freqtrade/lib/indicators
 
 USER ftuser
 RUN --mount=type=cache,target=/home/ftuser/.cache/pip \
-    pip install --user --no-build-isolation --no-cache-dir -r /freqtrade/requirements.txt \
-    && pip install --user --no-build-isolation --no-cache-dir /freqtrade/lib/indicators
+    pip install --user --no-build-isolation --no-cache-dir /freqtrade/lib/indicators
 
+# Install custom ccxt
 USER root
+RUN curl -L -o /tmp/ccxt.zip https://github.com/5queezer/ccxt/archive/refs/heads/feat/add-aster-dex.zip \
+    && unzip /tmp/ccxt.zip -d /tmp \
+    && pip install /tmp/ccxt-feat-add-aster-dex/python \
+    && rm -rf /tmp/ccxt.zip /tmp/ccxt-feat-add-aster-dex
+
 # Fix ownership of user install directory
 RUN chown -R 1000:1000 /home/ftuser/.local
 
@@ -29,7 +40,7 @@ FROM ${sourceimage}:${sourcetag}
 USER root
 
 COPY --from=builder /home/ftuser/.local /home/ftuser/.local
-COPY --chown=1000:1000 tests/requirements.txt /freqtrade/
+# COPY --chown=1000:1000 tests/requirements.txt /freqtrade/
 
 USER ftuser
 

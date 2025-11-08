@@ -1,5 +1,5 @@
-ARG sourceimage=freqtradeorg/freqtrade
-ARG sourcetag=stable
+ARG sourceimage=5queezer/freqtrade
+ARG sourcetag=latest
 
 # Stage 1: Build dependencies
 FROM ${sourceimage}:${sourcetag} AS builder
@@ -7,11 +7,11 @@ FROM ${sourceimage}:${sourcetag} AS builder
 USER root
 RUN pip install --upgrade pip
 
-COPY --chown=1000:1000 tests/requirements.txt /freqtrade/
+# COPY --chown=1000:1000 tests/requirements.txt /freqtrade/
 
-USER ftuser
-RUN --mount=type=cache,target=/home/ftuser/.cache/pip \
-    pip install --user --no-build-isolation --no-cache-dir -r /freqtrade/requirements.txt
+# USER ftuser
+# RUN --mount=type=cache,target=/home/ftuser/.cache/pip \
+#     pip install --user --no-build-isolation --no-cache-dir -r /freqtrade/requirements.txt
 
 USER root
 # Fix ownership of user install directory
